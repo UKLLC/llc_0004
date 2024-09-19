@@ -1,0 +1,467 @@
+##Purpose: deriving and harmonising sociodemographic variables across cohorts
+##Date created: 05/10/2023
+##Date last modified:09/10/2023
+##RT modified to remove small cell count in freq of missingness
+
+##---------------------------------------------------------------------------------------------------------
+##LOADING PACKAGES
+##---------------------------------------------------------------------------------------------------------
+reqPackages <- c("haven", "dplyr", "RODBC", "expss", "stringr", "expss", "sjlabelled", "labelled", "tidyr", "rstudioapi", "purrr", "tidyverse")
+lapply(reqPackages, require, character.only=TRUE)
+
+##clear working environment
+rm(list=ls())
+
+setwd("S:/LLC_0004/data/.rdata for recoding variables")
+
+##---------------------------------------------------------------------------------------------------------
+##LOADING DATA##
+##---------------------------------------------------------------------------------------------------------
+
+##USOC
+load("S://LLC_0004//data//.rdata for recoding variables//USOC_all_wide_021023.rdata")
+##ELSA
+load("S://LLC_0004//data//.rdata for recoding variables//ELSA_wide_031023.rdata")
+##ALSPAC CHILDREN
+load("S://LLC_0004//data//.rdata for recoding variables/ALSPAC_children_wide_021023.rdata")
+##ALSPAC MOTHERS
+load("S://LLC_0004//data//.rdata for recoding variables/ALSPAC_mothers_wide_021023.rdata")
+ls()
+
+##---------------------------------------------------------------------------------------------------------
+##HARMONISING VARIABLES##
+##---------------------------------------------------------------------------------------------------------
+##sex
+##education
+##shielding status
+##pre-pandemic general health
+##keyworker at any time during pandemic
+##pre-pandemic mental health
+
+
+##---------------------------------------------------------------------------------------------------------
+##SEX (MALE=1; FEMALE=2)
+##---------------------------------------------------------------------------------------------------------
+
+USOC already correctly coded - xsample_sex_dv
+ELSA already correctly coded - new_sex
+ALSPAC CHILDREN already correctly coded - wave0_kz021
+ALSPAC MOTHERS - all female, no variable available
+
+##USOC##
+look_for(ukhls_v0003, "sex_dv", details="none")##detail=none prints just the variable name and any labels containing string
+table(ukhls_v0003$xsample_sex_dv, useNA="always")##this variable has only <10 missing from whole sample
+
+##there is covid-wave sex that I could use to pick up NA's but will leave this for now as only deriving this as a
+##backup to replace missingness in the admin data
+
+##ELSA##
+look_for(elsa_v0001, "sex", details="none")
+
+table(elsa_v0001$C19_wave1_sex, useNA="always")
+##   1    2 <NA> 
+##3060 3980 2040 
+
+table(elsa_v0001$C19_wave2_sex, useNA="always")
+##   1    2 <NA> 
+##2966 3828 2286 
+
+table(elsa_v0001$wave9_p_sex, useNA="always")
+##   1    2 <NA> 
+##3854 4882  344 
+
+##if sex not available at wave 9, use sex from covid surveys
+elsa_v0001$new_sex <- ifelse(is.na(elsa_v0001$wave9_p_sex), elsa_v0001$C19_wave1_sex, elsa_v0001$wave9_p_sex)
+elsa_v0001$new_sex <- ifelse(is.na(elsa_v0001$new_sex), elsa_v0001$C19_wave2_sex, elsa_v0001$new_sex)
+
+table(elsa_v0001$new_sex, useNA="always")
+##   1    2 <NA> 
+##4011 5069    0 
+
+##ALSPAC CHILDREN##
+look_for(alspac_children_v0001, "sex", details="none")
+table(alspac_children_v0001$wave0_kz021, useNA="always")
+##this is the only sex variable
+
+##ALSPAC MOTHERS##
+look_for(alspac_mothers_v0001, "sex", details="none")
+
+##---------------------------------------------------------------------------------------------------------
+##EDUCATION (HIGHER ED=0; A-LEVEL OR EQUIV=1; GCSE OR EQUIV=2; <GCSE/NONE=3)
+##---------------------------------------------------------------------------------------------------------
+
+##USOC##
+look_for(ukhls_v0003, "education", details="none")
+
+table(ukhls_v0003$k_qfhigh_dv, useNA="always")
+table(ukhls_v0003$j_qfhigh_dv, useNA="always")
+str(ukhls_v0003$i_qfhigh, useNA="always")
+str(ukhls_v0003$h_qfhigh, useNA="always")
+
+##if highest qualification missing at wave k, use wave j, and so on
+ukhls_v0003$edu <- ifelse(is.na(ukhls_v0003$k_qfhigh_dv), ukhls_v0003$j_qfhigh_dv, ukhls_v0003$k_qfhigh_dv)
+ukhls_v0003$edu <- ifelse(is.na(ukhls_v0003$edu), ukhls_v0003$i_qfhigh_dv, ukhls_v0003$edu)
+ukhls_v0003$edu <- ifelse(is.na(ukhls_v0003$edu), ukhls_v0003$h_qfhigh_dv, ukhls_v0003$edu)
+ukhls_v0003$edu <- ifelse(is.na(ukhls_v0003$edu), ukhls_v0003$g_qfhigh_dv, ukhls_v0003$edu)
+
+##recoding education variable
+edu_usoc <- function(new, old, data, label){
+	tmp <- data
+	tmp[,new] <- NA
+	tmp[,new][tmp[,old]<0] <- NA
+	tmp[,new][tmp[,old]>=1 & tmp[,old]<=6] <- 0
+	tmp[,new][tmp[,old]>=7 & tmp[,old]<=9] <- 1
+	tmp[,new][tmp[,old]>=10 & tmp[,old]<=15] <- 2
+	tmp[,new][tmp[,old]>=16] <- 3 ##check this one
+##adding labels
+	var_lab(tmp[,new]) = label
+	tmp[,new] <- add_labels(tmp[,new], labels = c("Degree or above" = 0, "A-level or equiv" = 1, "GCSE or equiv" = 2, "<GCSE or none" = 3))
+	return(tmp)
+	}
+
+ukhls_v0003 <- edu_usoc(new="new_edu", old="edu", data=ukhls_v0003, label="Level of education")
+table(ukhls_v0003$new_edu, useNA="always")
+
+#ELSA#
+look_for(elsa_v0001, "qualification", details="none")
+table(elsa_v0001$C19_wave1_w9edqual, useNA="always")
+table(elsa_v0001$wave9_p_edqual, useNA="always")
+
+##If missing at covid wave, use wave 9
+elsa_v0001$edu <- ifelse(is.na(elsa_v0001$C19_wave1_w9edqual), elsa_v0001$wave9_p_edqual, elsa_v0001$C19_wave1_w9edqual)
+table(elsa_v0001$edu, useNA="always")
+unique(elsa_v0001$C19_wave1_w9edqual)
+unique(elsa_v0001$wave9_p_edqual)
+
+##recoding education variable
+edu_elsa <- function(new, old, data, label){
+	tmp <- data
+	tmp[,new] <- NA
+	tmp[,new][tmp[,old]<0 | tmp[,old]==6] <- NA ##have included "foreign/other" here
+	tmp[,new][tmp[,old]==1] <- 0
+	tmp[,new][tmp[,old]==2 | tmp[,old]==3] <- 1 
+	tmp[,new][tmp[,old]==4 | tmp[,old]==5] <- 2 
+	tmp[,new][tmp[,old]==7] <- 3
+#adding labels
+	var_lab(tmp[,new]) = label
+	tmp[,new] <- add_labels(tmp[,new], labels = c("Degree or above" = 0, "A-level or equiv" = 1, "GCSE or equiv" = 2, "<GCSE or none" = 3))
+	return(tmp)
+	}
+
+elsa_v0001 <- edu_elsa(new="new_edu", old="edu", data=elsa_v0001, label="Level of education")
+table(elsa_v0001$new_edu, useNA="always")
+
+##ALSPAC CHILDREN
+look_for(alspac_children_v0001, "degree", details="none")
+
+##doesn't seem to be qualifications/education data available for the children beyond whether they have no qualifications vs some
+table(alspac_children_v0001$wave0_ypf7510, useNA="always")
+
+##ALSPAC MOTHERS
+look_for(alspac_mothers_v0001, "education", details="none")
+table(alspac_mothers_v0001$wave0_c645a, useNA="always")
+unique(alspac_mothers_v0001$wave0_c645a)
+
+##recoding education variable
+edu_mothers <- function(new, old, data, label){
+	tmp <- data
+	tmp[,new] <- NA
+	tmp[,new][tmp[,old]<0] <- NA 
+	tmp[,new][tmp[,old]==5] <- 0
+	tmp[,new][tmp[,old]==4 | tmp[,old]==3] <- 1 
+	tmp[,new][tmp[,old]<=3 & tmp[,old]>=1] <- 2 
+	tmp[,new][tmp[,old]==0] <- 3
+#adding labels
+	var_lab(tmp[,new]) = label
+	tmp[,new] <- add_labels(tmp[,new], labels = c("Degree or above" = 0, "A-level or equiv" = 1, "GCSE or equiv" = 2, "<GCSE or none" = 3))
+	return(tmp)
+	}
+
+alspac_mothers_v0001 <- edu_mothers(new="new_edu", old="wave0_c645a", data=alspac_mothers_v0001, label="Level of education")
+table(alspac_mothers_v0001$new_edu, useNA="always")
+
+##---------------------------------------------------------------------------------------------------------
+##COVID-19 SHIELDING (NOT SHIELDING = 0; SHIELDING = 1)
+##---------------------------------------------------------------------------------------------------------
+
+##USOC##
+look_for(ukhls_v0003, "shield", details="none")
+##ca_nhsshield (all except cf) cg_nhsshield2; ch_nhsshield3
+
+table(ukhls_v0003$ca_nhsshield, useNA="always")
+table(ukhls_v0003$cb_nhsshield, useNA="always")
+table(ukhls_v0003$cc_nhsshield, useNA="always")
+table(ukhls_v0003$cd_nhsshield, useNA="always")
+table(ukhls_v0003$ce_nhsshield, useNA="always")
+table(ukhls_v0003$cg_nhsshield2, useNA="always")
+table(ukhls_v0003$ch_nhsshield3, useNA="always")
+
+##starting with most recent data, if shielding status not available, use previous wave
+##doing it this way as shielding list changed as time went on
+ukhls_v0003$shield <- ifelse(is.na(ukhls_v0003$ch_nhsshield3), ukhls_v0003$cg_nhsshield2, ukhls_v0003$ch_nhsshield3)
+ukhls_v0003$shield <- ifelse(is.na(ukhls_v0003$shield), ukhls_v0003$ce_nhsshield, ukhls_v0003$shield)
+ukhls_v0003$shield <- ifelse(is.na(ukhls_v0003$shield), ukhls_v0003$cd_nhsshield, ukhls_v0003$shield)
+ukhls_v0003$shield <- ifelse(is.na(ukhls_v0003$shield), ukhls_v0003$cc_nhsshield, ukhls_v0003$shield)
+ukhls_v0003$shield <- ifelse(is.na(ukhls_v0003$shield), ukhls_v0003$cb_nhsshield, ukhls_v0003$shield)
+ukhls_v0003$shield <- ifelse(is.na(ukhls_v0003$shield), ukhls_v0003$ca_nhsshield, ukhls_v0003$shield)
+
+##recoding shielding variable
+shield<- function(new, old, data, label){
+	tmp <- data
+	tmp[,new] <- NA
+	tmp[,new][tmp[,old]<0] <- NA 
+	tmp[,new][tmp[,old]==2] <- 0
+	tmp[,new][tmp[,old]==1] <- 1 
+#adding labels
+	var_lab(tmp[,new]) = label
+	tmp[,new] <- add_labels(tmp[,new], labels = c("No" = 0, "Yes" = 1))
+	return(tmp)
+	}
+
+ukhls_v0003 <- shield(new="new_shield", old="shield", data=ukhls_v0003, label="Shielding at any time during pandemic?")
+table(ukhls_v0003$new_shield, useNA="always")
+
+##ELSA##
+look_for(elsa_v0001, "vulnerable", details="none")
+##elsa doesn't seem to have shielding, but has "contacted by the nhs or your gp and advised that you are vulnerable and at risk"
+table(elsa_v0001$C19_wave1_cvvuln, useNA="always")
+##recoding missing variables to NA
+
+elsa_v0001 <- shield(new="new_shield", old="C19_wave1_cvvuln", data=elsa_v0001, label="Shielding at any time during pandemic?")
+table(elsa_v0001$new_shield, useNA="always")
+##recoding missing variables to NA
+
+##ALSPAC CHILDREN##
+look_for(alspac_children_v0001, "vulnerable", details="none")
+##has the following "Participant self-isolated because they are in a vulnerable group"
+table(alspac_children_v0001$wave2_covid2yp_2163, useNA="always")
+table(alspac_children_v0001$wave1_covid1yp_3013, useNA="always")
+
+alspac_children_v0001$shield <- ifelse(is.na(alspac_children_v0001$wave2_covid2yp_2163), alspac_children_v0001$wave1_covid1yp_3013, alspac_children_v0001$wave2_covid2yp_2163)
+table(alspac_children_v0001$shield, useNA="always")
+
+alspac_children_v0001 <- shield(new="new_shield", old="shield", data=alspac_children_v0001, label="Shielding at any time during pandemic?")
+table(alspac_children_v0001$new_shield, useNA="always")
+
+##ALSPAC MOTHERS##
+look_for(alspac_mothers_v0001, "vulnerable", details="none")
+##has the following "Participant self-isolated because they are in a vulnerable group"
+table(alspac_mothers_v0001$wave2_covid2m_2163, useNA="always")
+table(alspac_mothers_v0001$wave1_covid1m_3013, useNA="always")
+
+alspac_mothers_v0001$shield <- ifelse(is.na(alspac_mothers_v0001$wave2_covid2m_2163), alspac_mothers_v0001$wave1_covid1m_3013, alspac_mothers_v0001$wave2_covid2m_2163)
+table(alspac_mothers_v0001$shield, useNA="always")
+
+alspac_mothers_v0001 <- shield(new="new_shield", old="shield", data=alspac_mothers_v0001, label="Shielding at any time during pandemic?")
+table(alspac_mothers_v0001$new_shield, useNA="always")
+
+##---------------------------------------------------------------------------------------------------------
+##PRE-PANDEMIC GENERAL HEALTH (1=EXCELLENT; 2=VERY GOOD; 3=GOOD; 4=FAIR, 5=POOR)
+##---------------------------------------------------------------------------------------------------------
+
+##USOC##
+look_for(ukhls_v0003, "general health", details="none")
+##j_scsf1                       General health
+unique(ukhls_v0003$j_scsf1)
+
+##Recoding missing values to NA
+ukhls_v0003$new_prehealth <- ukhls_v0003$j_scsf1
+ukhls_v0003$new_prehealth[ukhls_v0003$j_scsf1<0] <- NA
+table(ukhls_v0003$new_prehealth, useNA="always")
+
+##ELSA##
+look_for(elsa_v0001, "general health", details="none")
+##wave9_g_hehelf Self-reported general health
+unique(elsa_v0001$wave9_g_hehelf)
+elsa_v0001$new_prehealth <- elsa_v0001$wave9_g_hehelf
+elsa_v0001$new_prehealth[elsa_v0001$wave9_g_hehelf<0] <- NA
+table(elsa_v0001$new_prehealth, useNA="always")
+
+##ALSPAC MOTHERS##
+##not available pre-pandemic
+
+##ALSPAC_CHILDREN##
+##not available pre-pandemic
+
+##---------------------------------------------------------------------------------------------------------
+##KEYWORKER STATUS (NOT KEYWORKER = 0; KEYWORKER = 1)
+##---------------------------------------------------------------------------------------------------------
+##USOC##
+look_for(ukhls_v0003, "keyworker", details="none")
+##only available at wave ca
+
+##recoding keyworker variable
+key <- function(new, old, data, label){
+	tmp <- data
+	tmp[,new] <- NA
+	tmp[,new][tmp[,old]<0] <- NA 
+	tmp[,new][tmp[,old]==2] <- 0
+	tmp[,new][tmp[,old]==1] <- 1 
+#adding labels
+	var_lab(tmp[,new]) = label
+	tmp[,new] <- add_labels(tmp[,new], labels = c("No" = 0, "Yes" = 1))
+	return(tmp)
+	}
+
+ukhls_v0003 <- key(new="new_keyworker", old="ca_keyworker", data=ukhls_v0003, label="Self-reported keyworker at any time during pandemic?")
+table(ukhls_v0003$new_keyworker, useNA="always")
+table(ukhls_v0003$ca_keyworker, useNA="always")
+
+##ELSA##
+look_for(elsa_v0001, "keyworker", details="none")
+##C19_wave1_cvkey
+table(elsa_v0001$C19_wave1_cvkey, useNA="always")
+##C19_wave2_cvkey
+table(elsa_v0001$C19_wave2_cvkey, useNA="always")
+
+##recoding missing
+elsa_v0001$C19_wave1_cvkey[elsa_v0001$C19_wave1_cvkey<0] <- NA
+elsa_v0001$C19_wave2_cvkey[elsa_v0001$C19_wave2_cvkey<0] <- NA
+
+##recoding so that if participant reported being keyworker AT EITHER WAVE, they are coded as key worker
+elsa_v0001$new_keyworker <- NA
+elsa_v0001$new_keyworker[elsa_v0001$C19_wave1_cvkey==1 | elsa_v0001$C19_wave2_cvkey==1] <- 1
+elsa_v0001$new_keyworker[elsa_v0001$C19_wave1_cvkey==2 & elsa_v0001$C19_wave2_cvkey==2] <- 0
+elsa_v0001$new_keyworker[elsa_v0001$C19_wave1_cvkey==2 & is.na(elsa_v0001$C19_wave2_cvkey)] <- 0
+elsa_v0001$new_keyworker[is.na(elsa_v0001$C19_wave1_cvkey) & elsa_v0001$C19_wave2_cvkey==2] <- 0
+table(elsa_v0001$new_keyworker, useNA="always")
+
+##adding label
+elsa_v0001$new_keyworker <- add_labels(elsa_v0001$new_keyworker, labels=c("No"=0, "Yes"=1))
+table(elsa_v0001$new_keyworker, useNA="always")
+
+##ALSPAC MOTHERS##
+look_for(alspac_mothers_v0001, "keyworker", details="none")
+##wave0_covid1m_5045 d12: Participant is a keyworker; as defined by the government: COVID1         
+##wave0_covid2m_6030 e3: Pp is a keyworker/work classified as critical to COVID-19 response: COVID2
+##wave1_covid1m_5046 d12b: Participant lives with a keyworker: COVID1                              
+##wave2_covid2m_6030 e3: Pp is a keyworker/work classified as critical to COVID-19 response: COVID2
+table(alspac_mothers_v0001$wave2_covid2m_6030, useNA="always")
+
+##recoding missing
+alspac_mothers_v0001$wave0_covid1m_5045[alspac_mothers_v0001$wave0_covid1m_5045<0 | alspac_mothers_v0001$wave0_covid1m_5045==9] <- NA
+alspac_mothers_v0001$wave0_covid2m_6030[alspac_mothers_v0001$wave0_covid2m_6030<0 | alspac_mothers_v0001$wave0_covid2m_6030==9] <- NA
+alspac_mothers_v0001$wave1_covid1m_5046[alspac_mothers_v0001$wave1_covid1m_5046<0 | alspac_mothers_v0001$wave1_covid1m_5046==9] <- NA
+alspac_mothers_v0001$wave2_covid2m_6030[alspac_mothers_v0001$wave2_covid2m_6030<0 | alspac_mothers_v0001$wave2_covid2m_6030==9] <- NA
+
+##recoding so that if participant reported being keyworker AT ANY WAVE, they are coded as key worker
+alspac_mothers_v0001$new_keyworker <- NA
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==1 | alspac_mothers_v0001$wave0_covid2m_6030==1 |
+	alspac_mothers_v0001$wave1_covid1m_5046==1 | alspac_mothers_v0001$wave2_covid2m_6030==1] <- 1
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+alspac_mothers_v0001$new_keyworker[is.na(alspac_mothers_v0001$wave0_covid1m_5045) & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & is.na(alspac_mothers_v0001$wave0_covid2m_6030) &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	is.na(alspac_mothers_v0001$wave1_covid1m_5046) & alspac_mothers_v0001$wave2_covid2m_6030==2] <- 0
+alspac_mothers_v0001$new_keyworker[alspac_mothers_v0001$wave0_covid1m_5045==2 & alspac_mothers_v0001$wave0_covid2m_6030==2 &
+	alspac_mothers_v0001$wave1_covid1m_5046==2 & is.na(alspac_mothers_v0001$wave2_covid2m_6030)] <- 0
+
+table(alspac_mothers_v0001$new_keyworker, useNA="always")
+
+##adding label
+alspac_mothers_v0001$new_keyworker <- add_labels(alspac_mothers_v0001$new_keyworker, labels=c("No"=0, "Yes"=1))
+table(alspac_mothers_v0001$new_keyworker, useNA="always")
+
+##ALSPAC_CHILDREN##
+look_for(alspac_children_v0001, "keyworker", details="none")
+##wave0_covid1yp_5045 d12: Participant is a keyworker; as defined by the government: COVID1         
+##wave0_covid2yp_6030 e3: Pp is a keyworker/work classified as critical to COVID-19 response: COVID2
+##wave1_covid1yp_5045 d12: Participant is a keyworker; as defined by the government: COVID1         
+##wave2_covid2yp_6030 e3: Pp is a keyworker/work classified as critical to COVID-19 response: COVID2
+table(alspac_children_v0001$wave0_covid1yp_5045, useNA="always")
+
+##recoding missing
+alspac_children_v0001$wave0_covid1yp_5045[alspac_children_v0001$wave0_covid1yp_5045<0 | alspac_children_v0001$wave0_covid1yp_5045==9] <- NA
+alspac_children_v0001$wave0_covid2yp_6030[alspac_children_v0001$wave0_covid2yp_6030<0 | alspac_children_v0001$wave0_covid2yp_6030==9] <- NA
+alspac_children_v0001$wave1_covid1yp_5045[alspac_children_v0001$wave1_covid1yp_5045<0 | alspac_children_v0001$wave1_covid1yp_5045==9] <- NA
+alspac_children_v0001$wave2_covid2yp_6030[alspac_children_v0001$wave2_covid2yp_6030<0 | alspac_children_v0001$wave2_covid2yp_6030==9] <- NA
+
+##recoding so that if participant reported being keyworker AT ANY WAVE, they are coded as key worker
+alspac_children_v0001$new_keyworker <- NA
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==1 | alspac_children_v0001$wave0_covid2yp_6030==1 |
+	alspac_children_v0001$wave1_covid1yp_5045==1 | alspac_children_v0001$wave2_covid2yp_6030==1] <- 1
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	alspac_children_v0001$wave1_covid1yp_5046==2 & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	alspac_children_v0001$wave1_covid1yp_5046==2 & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+alspac_children_v0001$new_keyworker[is.na(alspac_children_v0001$wave0_covid1yp_5045) & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & is.na(alspac_children_v0001$wave0_covid2yp_6030) &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	is.na(alspac_children_v0001$wave1_covid1yp_5045) & alspac_children_v0001$wave2_covid2yp_6030==2] <- 0
+alspac_children_v0001$new_keyworker[alspac_children_v0001$wave0_covid1yp_5045==2 & alspac_children_v0001$wave0_covid2yp_6030==2 &
+	alspac_children_v0001$wave1_covid1yp_5045==2 & is.na(alspac_children_v0001$wave2_covid2yp_6030)] <- 0
+
+table(alspac_children_v0001$new_keyworker, useNA="always")
+
+alspac_children_v0001$new_keyworker <- add_labels(alspac_children_v0001$new_keyworker, labels=c("No"=0, "Yes"=1))
+
+##---------------------------------------------------------------------------------------------------------
+##PRE-PANDEMIC MENTAL HEALTH (1=EXCELLENT; 2=VERY GOOD; 3=GOOD; 4=FAIR, 5=POOR)
+##---------------------------------------------------------------------------------------------------------
+
+##USOC##
+look_for(ukhls_v0003, "scghq", details="none")
+##likert: j_scghq1_dv (cutoff 4+)
+##caseness: j_scghq2_dv
+table(ukhls_v0003$j_scghq2_dv)
+
+##ELSA##
+look_for(elsa_v0001, "cesd", details="none")
+##wave9_p_cesd_sc: max score 8 cutoff >=3 indicates caseness
+
+table(elsa_v0001$wave9_p_cesd_sc, useNA="always")
+
+##ALSPAC CHILDREN##
+##only pandemic available
+look_for(alspac_children_v0001, "SMFQ", details="none")
+
+##END
+
+
